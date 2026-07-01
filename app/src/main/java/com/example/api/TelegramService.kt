@@ -13,6 +13,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -26,10 +28,14 @@ class TelegramService {
         .readTimeout(120, TimeUnit.SECONDS)
         .build()
 
+    private val moshi = Moshi.Builder()
+        .addLast(KotlinJsonAdapterFactory())
+        .build()
+
     private val retrofit = Retrofit.Builder()
         .baseUrl("https://api.telegram.org/")
         .client(okHttpClient)
-        .addConverterFactory(MoshiConverterFactory.create())
+        .addConverterFactory(MoshiConverterFactory.create(moshi))
         .build()
 
     private val api = retrofit.create(TelegramBotApi::class.java)

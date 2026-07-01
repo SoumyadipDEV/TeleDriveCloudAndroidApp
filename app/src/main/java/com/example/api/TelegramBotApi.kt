@@ -11,6 +11,8 @@ import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
 
+import com.squareup.moshi.JsonClass
+
 interface TelegramBotApi {
 
     @Multipart
@@ -39,12 +41,14 @@ interface TelegramBotApi {
     ): Response<TelegramResponse<TelegramChat>>
 }
 
+@JsonClass(generateAdapter = true)
 data class TelegramResponse<T>(
     val ok: Boolean,
     val result: T?,
     val description: String? = null
 )
 
+@JsonClass(generateAdapter = true)
 data class TelegramUser(
     val id: Long,
     val is_bot: Boolean,
@@ -52,6 +56,7 @@ data class TelegramUser(
     val username: String? = null
 )
 
+@JsonClass(generateAdapter = true)
 data class TelegramChat(
     val id: Long,
     val type: String,
@@ -59,11 +64,13 @@ data class TelegramChat(
     val username: String? = null
 )
 
+@JsonClass(generateAdapter = true)
 data class TelegramMessage(
     val message_id: Int,
     val document: TelegramDocument? = null
 )
 
+@JsonClass(generateAdapter = true)
 data class TelegramDocument(
     val file_id: String,
     val file_unique_id: String,
@@ -72,6 +79,7 @@ data class TelegramDocument(
     val file_size: Long = 0L
 )
 
+@JsonClass(generateAdapter = true)
 data class TelegramFile(
     val file_id: String,
     val file_unique_id: String,
