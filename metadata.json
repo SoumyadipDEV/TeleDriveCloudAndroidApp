@@ -1,0 +1,6 @@
+{
+  "name": "TeleDrive",
+  "description": "A secure, Material 3 Cloud Storage application styled like Google Drive, powered by Telegram as its backend storage engine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

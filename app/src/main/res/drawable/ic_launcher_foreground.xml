@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Centered elegant Cloud outline -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M78,52 C78,43.2 70.8,36 62,36 C59.6,36 57.3,36.5 55.2,37.5 C51.4,31.5 44.9,28 38,28 C26.9,28 18,36.9 18,48 C18,49.1 18.1,50.2 18.3,51.3 C11.1,52.8 6,59.1 6,66 C6,74.8 13.2,82 22,82 L78,82 C86.8,82 94,74.8 94,66 C94,58.3 87.3,52 78,52 Z" />
+    <!-- Telegram paper plane representation inside the cloud -->
+    <path
+        android:fillColor="#0A58CA"
+        android:pathData="M42,46 L68,56 L42,66 L42,56 L58,56 Z" />
+</vector>
