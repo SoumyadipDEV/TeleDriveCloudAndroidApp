@@ -313,10 +313,12 @@ class MainViewModel(private val repository: FileRepository) : ViewModel() {
     }
 
     fun updateBotCredentials(context: Context, token: String, chatId: String, chatTitle: String = "") {
+        val trimmedToken = token.trim()
+        val trimmedChatId = chatId.trim()
         val updated = _authState.value.copy(
-            botToken = token,
-            chatId = chatId,
-            isLoggedIn = token.isNotBlank() && chatId.isNotBlank()
+            botToken = trimmedToken,
+            chatId = trimmedChatId,
+            isLoggedIn = trimmedToken.isNotBlank() && trimmedChatId.isNotBlank()
         )
         _authState.value = updated
         saveSession(context, updated)
@@ -346,12 +348,14 @@ class MainViewModel(private val repository: FileRepository) : ViewModel() {
         chatId: String,
         onResult: (success: Boolean, message: String) -> Unit
     ) {
+        val trimmedToken = token.trim()
+        val trimmedChatId = chatId.trim()
         viewModelScope.launch {
-            val (isValid, chatTitle) = telegramService.validateCredentials(token, chatId)
+            val (isValid, chatTitle) = telegramService.validateCredentials(trimmedToken, trimmedChatId)
             if (isValid) {
-                updateBotCredentials(context, token, chatId, chatTitle)
+                updateBotCredentials(context, trimmedToken, trimmedChatId, chatTitle)
                 addNotification("Connected to Bot", "Successfully connected to channel '$chatTitle'.", NotificationType.SUCCESS)
-                onResult(true, "Successfully connected to $chatTitle!")
+                onResult(true, "Successfully connected to $trimmedChatId ($chatTitle)!")
             } else {
                 addNotification("Connection Failed", chatTitle, NotificationType.ERROR)
                 onResult(false, chatTitle)

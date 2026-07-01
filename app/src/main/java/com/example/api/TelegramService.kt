@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
@@ -20,7 +21,9 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
-class TelegramService {
+class TelegramService(baseUrlInput: String? = null) {
+
+    private val baseApiUrl: String = validateBaseUrl(baseUrlInput)
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
@@ -33,7 +36,7 @@ class TelegramService {
         .build()
 
     private val retrofit = Retrofit.Builder()
-        .baseUrl("https://api.telegram.org/")
+        .baseUrl(baseApiUrl)
         .client(okHttpClient)
         .addConverterFactory(MoshiConverterFactory.create(moshi))
         .build()
@@ -212,7 +215,7 @@ class TelegramService {
             if (response.isSuccessful && response.body()?.ok == true) {
                 val filePath = response.body()?.result?.file_path
                 if (filePath != null) {
-                    "https://api.telegram.org/file/bot$token/$filePath"
+                    "${baseApiUrl}file/bot$token/$filePath"
                 } else null
             } else null
         } catch (e: Exception) {
@@ -244,7 +247,7 @@ class TelegramService {
                     }
 
                     val filePath = pathResponse.body()?.result?.file_path ?: return@withContext false
-                    val downloadUrl = "https://api.telegram.org/file/bot$token/$filePath"
+                    val downloadUrl = "${baseApiUrl}file/bot$token/$filePath"
 
                     val downloadClient = OkHttpClient()
                     val request = okhttp3.Request.Builder().url(downloadUrl).build()
@@ -280,9 +283,22 @@ class TelegramService {
      * Returns a Pair: first is success/failure Boolean, second is an optional error/success string (like the chat title).
      */
     suspend fun validateCredentials(token: String, chatId: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val trimmedToken = token.trim()
+        val trimmedChatId = chatId.trim()
+
+        if (trimmedToken.isBlank()) {
+            return@withContext Pair(false, "Bot token cannot be empty.")
+        }
+        if (trimmedChatId.isBlank()) {
+            return@withContext Pair(false, "Chat / Channel ID cannot be empty.")
+        }
+        if (trimmedToken.contains(" ") || !trimmedToken.contains(":")) {
+            return@withContext Pair(false, "Malformed Bot Token. It should look like '123456789:ABC-DEF1234ghIkl-zyx57W2v1u...' without spaces.")
+        }
+
         try {
             // 1. Verify Bot Token
-            val meResponse = api.getMe(token)
+            val meResponse = api.getMe(trimmedToken)
             if (!meResponse.isSuccessful || meResponse.body()?.ok != true) {
                 val errorMsg = meResponse.body()?.description ?: "Invalid bot token (Unauthorized)"
                 return@withContext Pair(false, "Bot verification failed: $errorMsg")
@@ -292,7 +308,7 @@ class TelegramService {
             val botUsername = botUser?.username ?: "Bot"
 
             // 2. Verify Chat / Channel Access
-            val chatResponse = api.getChat(token, chatId)
+            val chatResponse = api.getChat(trimmedToken, trimmedChatId)
             if (!chatResponse.isSuccessful || chatResponse.body()?.ok != true) {
                 val errorMsg = chatResponse.body()?.description ?: "Bot cannot access this chat/channel"
                 return@withContext Pair(false, "Chat access failed: $errorMsg. (Tip: Make sure your bot is added to your channel/group as an admin/member!)")
@@ -304,6 +320,38 @@ class TelegramService {
         } catch (e: Exception) {
             Log.e("TelegramService", "validateCredentials exception", e)
             Pair(false, "Connection error: ${e.localizedMessage ?: "Please check your network and try again."}")
+        }
+    }
+
+    companion object {
+        private const val DEFAULT_BASE_URL = "https://api.telegram.org/"
+
+        fun validateBaseUrl(input: String?): String {
+            val trimmed = input?.trim() ?: ""
+            if (trimmed.isEmpty()) {
+                return DEFAULT_BASE_URL
+            }
+
+            // 1. Ensure scheme is present
+            var urlWithScheme = trimmed
+            if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+                urlWithScheme = "https://$trimmed"
+            }
+
+            // 2. Ensure trailing slash
+            if (!urlWithScheme.endsWith("/")) {
+                urlWithScheme = "$urlWithScheme/"
+            }
+
+            // 3. Try parsing with OkHttp's HttpUrl to see if it is a well-formed base URL
+            val httpUrl = urlWithScheme.toHttpUrlOrNull()
+            if (httpUrl == null) {
+                // If it's malformed, fallback to DEFAULT_BASE_URL to avoid app crash
+                Log.e("TelegramService", "Malformed base URL input: $trimmed. Falling back to default.")
+                return DEFAULT_BASE_URL
+            }
+
+            return httpUrl.toString()
         }
     }
 }
