@@ -57,9 +57,45 @@ data class VirtualDrive(
     val iconType: String // "all", "video", "document", "music"
 )
 
+enum class NotificationType {
+    INFO, SUCCESS, ERROR
+}
+
+data class AppNotification(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val title: String,
+    val message: String,
+    val type: NotificationType,
+    val timestamp: Long = System.currentTimeMillis(),
+    val isRead: Boolean = false
+)
+
 class MainViewModel(private val repository: FileRepository) : ViewModel() {
 
     private val telegramService = TelegramService()
+
+    // Notification center states
+    private val _notifications = MutableStateFlow<List<AppNotification>>(emptyList())
+    val notifications: StateFlow<List<AppNotification>> = _notifications.asStateFlow()
+
+    fun addNotification(title: String, message: String, type: NotificationType) {
+        val newNotification = AppNotification(title = title, message = message, type = type)
+        _notifications.value = listOf(newNotification) + _notifications.value
+    }
+
+    fun markAllNotificationsAsRead() {
+        _notifications.value = _notifications.value.map { it.copy(isRead = true) }
+    }
+
+    fun markNotificationAsRead(id: String) {
+        _notifications.value = _notifications.value.map {
+            if (it.id == id) it.copy(isRead = true) else it
+        }
+    }
+
+    fun clearNotifications() {
+        _notifications.value = emptyList()
+    }
 
     // Screen navigation state: "Home", "MyDrive", "Shared", "Recent", "Starred", "Trash"
     private val _currentScreen = MutableStateFlow("Home")
@@ -131,7 +167,11 @@ class MainViewModel(private val repository: FileRepository) : ViewModel() {
     val fileFilter: StateFlow<String> = _fileFilter.asStateFlow()
 
     init {
-        // Init flow
+        addNotification(
+            title = "Welcome to TeleDrive",
+            message = "Connected to your high-performance, unlimited Telegram cloud storage.",
+            type = NotificationType.SUCCESS
+        )
     }
 
     // Reactive flow mapping to load files based on active directory and active channel
@@ -310,8 +350,10 @@ class MainViewModel(private val repository: FileRepository) : ViewModel() {
             val (isValid, chatTitle) = telegramService.validateCredentials(token, chatId)
             if (isValid) {
                 updateBotCredentials(context, token, chatId, chatTitle)
+                addNotification("Connected to Bot", "Successfully connected to channel '$chatTitle'.", NotificationType.SUCCESS)
                 onResult(true, "Successfully connected to $chatTitle!")
             } else {
+                addNotification("Connection Failed", chatTitle, NotificationType.ERROR)
                 onResult(false, chatTitle)
             }
         }
@@ -339,7 +381,18 @@ class MainViewModel(private val repository: FileRepository) : ViewModel() {
                 )
                 _authState.value = updated
                 saveSession(context, updated)
+                addNotification(
+                    title = "Connected to Client",
+                    message = "User account ${updated.phoneNumber} connected via MTProto Client.",
+                    type = NotificationType.SUCCESS
+                )
                 seedStarterItems()
+            } else {
+                addNotification(
+                    title = "Authentication Failed",
+                    message = "Verification code is incorrect.",
+                    type = NotificationType.ERROR
+                )
             }
         }
     }
@@ -487,6 +540,7 @@ class MainViewModel(private val repository: FileRepository) : ViewModel() {
 
     // Local Sync Engine
     fun syncActiveChannel(context: Context) {
+        addNotification("Synchronizing", "Fetching latest file metadata from Telegram channel...", NotificationType.INFO)
         viewModelScope.launch {
             _isSyncing.value = true
             delay(1500) // Simulating network delays, parsing TG channels messages
@@ -572,6 +626,7 @@ class MainViewModel(private val repository: FileRepository) : ViewModel() {
                 }
             }
             _isSyncing.value = false
+            addNotification("Sync Complete", "Synchronized file system metadata successfully.", NotificationType.SUCCESS)
             withContext(Dispatchers.Main) {
                 Toast.makeText(context, "Channel metadata synchronized successfully!", Toast.LENGTH_SHORT).show()
             }
@@ -620,26 +675,47 @@ class MainViewModel(private val repository: FileRepository) : ViewModel() {
     }
 
     fun createFolder(name: String) {
+        if (name.isBlank()) {
+            addNotification("Folder Creation Failed", "Folder name cannot be empty.", NotificationType.ERROR)
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
-            val folder = VFile(
-                name = name,
-                isFolder = true,
-                parentId = _currentFolderId.value,
-                channelId = _activeChannelId.value
-            )
-            repository.insertFile(folder)
+            try {
+                val folder = VFile(
+                    name = name,
+                    isFolder = true,
+                    parentId = _currentFolderId.value,
+                    channelId = _activeChannelId.value
+                )
+                repository.insertFile(folder)
+                addNotification("Folder Created", "Successfully created folder '$name'.", NotificationType.SUCCESS)
+            } catch (e: Exception) {
+                addNotification("Folder Creation Failed", e.localizedMessage ?: "Unknown error occurred.", NotificationType.ERROR)
+            }
         }
     }
 
     fun renameFile(fileId: Long, newName: String) {
+        if (newName.isBlank()) {
+            addNotification("Rename Failed", "File or folder name cannot be empty.", NotificationType.ERROR)
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
-            val file = repository.getFileById(fileId)
-            if (file != null) {
-                val updated = file.copy(
-                    name = newName,
-                    modifiedAt = System.currentTimeMillis()
-                )
-                repository.insertFile(updated)
+            try {
+                val file = repository.getFileById(fileId)
+                if (file != null) {
+                    val oldName = file.name
+                    val updated = file.copy(
+                        name = newName,
+                        modifiedAt = System.currentTimeMillis()
+                    )
+                    repository.insertFile(updated)
+                    addNotification("Item Renamed", "Renamed '$oldName' to '$newName' successfully.", NotificationType.SUCCESS)
+                } else {
+                    addNotification("Rename Failed", "Item not found in database.", NotificationType.ERROR)
+                }
+            } catch (e: Exception) {
+                addNotification("Rename Failed", e.localizedMessage ?: "Unknown error occurred.", NotificationType.ERROR)
             }
         }
     }
@@ -680,6 +756,7 @@ class MainViewModel(private val repository: FileRepository) : ViewModel() {
                     deletedAt = System.currentTimeMillis()
                 )
                 repository.insertFile(updated)
+                addNotification("Moved to Trash", "'${file.name}' was moved to the Trash bin.", NotificationType.INFO)
             }
         }
     }
@@ -693,19 +770,25 @@ class MainViewModel(private val repository: FileRepository) : ViewModel() {
                     deletedAt = null
                 )
                 repository.insertFile(updated)
+                addNotification("Restored Item", "'${file.name}' has been restored successfully.", NotificationType.SUCCESS)
             }
         }
     }
 
     fun deleteFilePermanently(fileId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
-            repository.deleteFileById(fileId)
+            val file = repository.getFileById(fileId)
+            if (file != null) {
+                repository.deleteFileById(fileId)
+                addNotification("Permanently Deleted", "Successfully deleted '${file.name}' permanently.", NotificationType.SUCCESS)
+            }
         }
     }
 
     fun emptyTrash(context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.emptyTrashByChannel(_activeChannelId.value)
+            addNotification("Trash Emptied", "All files and folders in the trash were permanently deleted.", NotificationType.SUCCESS)
             withContext(Dispatchers.Main) {
                 Toast.makeText(context, "Trash emptied permanently!", Toast.LENGTH_SHORT).show()
             }
@@ -739,6 +822,7 @@ class MainViewModel(private val repository: FileRepository) : ViewModel() {
             status = "Uploading"
         )
         _uploadTasks.value = _uploadTasks.value + initialTask
+        addNotification("Upload Started", "Uploading '$fileName' to Telegram channel...", NotificationType.INFO)
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -789,6 +873,8 @@ class MainViewModel(private val repository: FileRepository) : ViewModel() {
                         )
                         repository.insertFile(vFile)
 
+                        addNotification("Upload Complete", "Successfully uploaded '$fileName' to Telegram.", NotificationType.SUCCESS)
+
                         // Update queue
                         setTaskStatus(taskId, "Success")
                         // Clean up cache
@@ -796,11 +882,13 @@ class MainViewModel(private val repository: FileRepository) : ViewModel() {
                     }
                     is UploadResult.Error -> {
                         setTaskStatus(taskId, "Failed")
+                        addNotification("Upload Failed", "Failed to upload '$fileName': ${result.message}", NotificationType.ERROR)
                         cacheFile.delete()
                     }
                 }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error copying file", e)
+                addNotification("Upload Failed", "Failed to upload '$fileName': ${e.localizedMessage ?: "Unknown error"}", NotificationType.ERROR)
                 setTaskStatus(taskId, "Failed")
             }
         }
@@ -843,8 +931,11 @@ class MainViewModel(private val repository: FileRepository) : ViewModel() {
                 val fileId = file.telegramFileId
                 if (token.isBlank() || fileId.isNullOrBlank()) {
                     onComplete(false, "Login with Telegram required to download.")
+                    addNotification("Download Failed", "Login with Telegram required to download '${file.name}'.", NotificationType.ERROR)
                     return@launch
                 }
+
+                addNotification("Download Started", "Downloading '${file.name}' to local storage...", NotificationType.INFO)
 
                 // Check environment
                 val destinationDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: context.cacheDir
@@ -858,13 +949,15 @@ class MainViewModel(private val repository: FileRepository) : ViewModel() {
                 )
 
                 if (success) {
-                    // Try to also copy it to the public downloads folder or notify
+                    addNotification("Download Complete", "Successfully downloaded '${file.name}' to downloads folder.", NotificationType.SUCCESS)
                     onComplete(true, "Successfully downloaded ${file.name} to External storage!")
                 } else {
+                    addNotification("Download Failed", "Download failed from Telegram servers for '${file.name}'.", NotificationType.ERROR)
                     onComplete(false, "Download failed from Telegram servers.")
                 }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error in downloadFile", e)
+                addNotification("Download Failed", "Error downloading '${file.name}': ${e.localizedMessage ?: "Unknown error"}", NotificationType.ERROR)
                 onComplete(false, "Error: ${e.localizedMessage ?: "Unknown download error"}")
             }
         }

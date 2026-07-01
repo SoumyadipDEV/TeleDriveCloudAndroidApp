@@ -92,6 +92,7 @@ fun DashboardScreen(
     var accountPhoneInput by remember { mutableStateOf("") }
 
     var showActionSheetForFile by remember { mutableStateOf<VFile?>(null) }
+    var showNotificationsSheet by remember { mutableStateOf(false) }
     var activePreviewFile by remember { mutableStateOf<VFile?>(null) }
     var activePreviewUrl by remember { mutableStateOf<String?>(null) }
 
@@ -280,6 +281,30 @@ fun DashboardScreen(
                                     imageVector = if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
                                     contentDescription = "Toggle Theme"
                                 )
+                            }
+
+                            // Notification Bell Button
+                            val notificationsList by viewModel.notifications.collectAsState()
+                            val unreadCount = remember(notificationsList) { notificationsList.count { !it.isRead } }
+
+                            IconButton(onClick = { showNotificationsSheet = true }) {
+                                BadgedBox(
+                                    badge = {
+                                        if (unreadCount > 0) {
+                                            Badge(
+                                                containerColor = MaterialTheme.colorScheme.error,
+                                                contentColor = MaterialTheme.colorScheme.onError
+                                            ) {
+                                                Text(unreadCount.toString())
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Notifications,
+                                        contentDescription = "Notifications"
+                                    )
+                                }
                             }
 
                             Spacer(modifier = Modifier.width(4.dp))
@@ -1014,6 +1039,177 @@ fun DashboardScreen(
                 }
             }
         )
+    }
+
+    // Notifications Bottom Sheet
+    if (showNotificationsSheet) {
+        val notifications by viewModel.notifications.collectAsState()
+        ModalBottomSheet(
+            onDismissRequest = { 
+                showNotificationsSheet = false 
+                viewModel.markAllNotificationsAsRead()
+            },
+            dragHandle = { BottomSheetDefaults.DragHandle() }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .navigationBarsPadding()
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Activity Log & Alerts",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    
+                    if (notifications.isNotEmpty()) {
+                        TextButton(onClick = { viewModel.clearNotifications() }) {
+                            Text("Clear All")
+                        }
+                    }
+                }
+
+                Divider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.08f))
+
+                if (notifications.isEmpty()) {
+                    // Empty state
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(240.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Notifications,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
+                                modifier = Modifier.size(56.dp)
+                            )
+                            Text(
+                                text = "All quiet for now",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                            )
+                            Text(
+                                text = "Uploads, downloads, and other transfer events will appear here.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(horizontal = 32.dp)
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .padding(vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(notifications, key = { it.id }) { notification ->
+                            val colorScheme = MaterialTheme.colorScheme
+                            val (icon, color, bg) = when (notification.type) {
+                                NotificationType.SUCCESS -> Triple(
+                                    Icons.Default.CheckCircle,
+                                    Color(0xFF2E7D32),
+                                    Color(0xFFE8F5E9)
+                                )
+                                NotificationType.ERROR -> Triple(
+                                    Icons.Default.Error,
+                                    colorScheme.error,
+                                    colorScheme.errorContainer.copy(alpha = 0.2f)
+                                )
+                                NotificationType.INFO -> Triple(
+                                    Icons.Default.Info,
+                                    colorScheme.primary,
+                                    colorScheme.primaryContainer.copy(alpha = 0.2f)
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (notification.isRead) colorScheme.surfaceVariant.copy(alpha = 0.3f) else colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                                    .clickable { viewModel.markNotificationAsRead(notification.id) }
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                // Type Icon with background circle
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(bg)
+                                ) {
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = null,
+                                        tint = color,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+
+                                // Text Content
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = notification.title,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = if (notification.isRead) FontWeight.Normal else FontWeight.Bold,
+                                            color = colorScheme.onSurface
+                                        )
+                                        if (!notification.isRead) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(colorScheme.primary)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = notification.message,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    val sdf = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+                                    val timeStr = remember(notification.timestamp) { sdf.format(Date(notification.timestamp)) }
+                                    Text(
+                                        text = timeStr,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
